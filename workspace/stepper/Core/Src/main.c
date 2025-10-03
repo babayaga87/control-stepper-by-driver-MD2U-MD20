@@ -57,12 +57,13 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
-uint8_t rx_data[10];
-uint8_t rx_index = 0;
-uint8_t mode;
+uint8_t rx_buffer[10];
+int8_t rx_index = 0;
+uint8_t rx_data;
+uint8_t mode = 1;
 volatile uint16_t dem = 0;
-uint8_t vong = 0;
-uint8_t chieu = 0;
+uint8_t direction = 0;
+uint8_t circle = 0;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -101,14 +102,10 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-  //HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
-  //HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
-  //HAL_Delay(1);
-  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-  //HAL_TIM_Base_Start_IT(&htim2);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
+  HAL_TIM_PWM_Start_IT(&htim2, TIM_CHANNEL_1);
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1,500);
-  //HAL_UART_Receive_IT(&huart2, rx_data, 1);
+  HAL_UART_Receive_IT(&huart1, &rx_data, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -257,79 +254,79 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-/*
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if(huart->Instance == USART2)
+  if (huart->Instance == USART1)
+  {
+    if (rx_data == ';') // Gặp dấu kết thúc
     {
-        uint8_t c = rx_data[0];
+      rx_buffer[rx_index] = '\0';
+      rx_index = 0;
 
-        if(c == '\n')
-        {
-            rx_data[rx_index] = '\0';
-
-            // tách giá trị nhận được
-            if(rx_data[0] == '1')
-            {
-                mode = 1;
-            }
-            else if(rx_data[0] == '2')
-            {
-                mode = 2;
-            }
-            else if(rx_data[0] == '3')
-            {
-                int v, d;
-                sscanf((char*)rx_data, "3 %d %d", &v, &d); // ép kiểu thành dạng char
-                mode  = 3;
-                vong  = v;
-                chieu = d;
-            }
-
-            rx_index = 0; //
-        }
-        else
-        {
-            rx_data[rx_index++] = c;
-        }
-
-        HAL_UART_Receive_IT(&huart2, rx_data, 1);
+      if (rx_buffer[0] == '1') {
+        mode = 1;
+        dem = 0;
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+        HAL_UART_Transmit(&huart1, (uint8_t*)"Mode 1\r\n", 8, 1000);
+      }
+      else if (rx_buffer[0] == '2') {
+        mode = 2;
+        dem = 0;
+        HAL_UART_Transmit(&huart1, (uint8_t*)"Mode 2\r\n", 8, 1000);
+      }
+      else if (rx_buffer[0] == '3') {
+    	int m, d, v;
+        sscanf((char*)rx_buffer, "%d %d %d", &m, &d, &v);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
+        HAL_UART_Transmit(&huart1, (uint8_t*)"Mode 3\r\n", 8, 1000);
+        mode = m;
+        direction = d;
+        circle = v;
+      }
     }
+    else
+    {
+      rx_buffer[rx_index++] = rx_data;
+      if (rx_index >= sizeof(rx_buffer)) rx_index = 0;
+    }
+
+    HAL_UART_Receive_IT(&huart1, &rx_data, 1);
+  }
 }
-*/
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-	dem++;
-	if(mode == 1 && dem >= 500){
-		dem = 0;
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2); // đổi chiều động cơ thay đổi ccw
-	}
-
-	if(mode == 2 && dem >= 500){
-		dem = 0;
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET); // quay 1 chiều rồi dừng động cơ
-	}
-
-	if(mode == 3){
-		uint8_t dir_state = chieu;
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, dir_state); // đổi chiều ccw
-		if(dem >= vong*500){
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET); // dừng động cơ
-		}
-
-	}
-}
 
 
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim){
 	dem++;
-	if(dem >= 200){
+	if(mode == 1 && dem >= 845){
 		dem = 0;
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
-		//HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
+		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
+        HAL_UART_Transmit(&huart1, (uint8_t*)"Mode 1", 6, 1000);
 	}
+
+	if(mode == 2 && dem >= 845){
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+        HAL_UART_Transmit(&huart1, (uint8_t*)"Mode 1", 6, 1000);
+		dem = 0;
+	}
+
+	if(mode == 3){
+		if(direction == 1){
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
+		}else if(direction == 0){
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
+		}
+
+		if(dem >= 845*circle){
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);
+			HAL_UART_Transmit(&huart1, (uint8_t*)"Mode 1", 6, 1000);
+			dem = 0;
+		}
+	}
+
 }
+
+
 /* USER CODE END 4 */
 
 /**
@@ -362,3 +359,4 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
+
